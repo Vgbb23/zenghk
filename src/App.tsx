@@ -57,6 +57,25 @@ const formatCpf = (digits: string) => {
   return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}`;
 };
 
+const isValidCpf = (digits: string) => {
+  const d = onlyDigits(digits);
+  if (d.length !== 11 || /^(\d)\1+$/.test(d)) return false;
+
+  const calcCheck = (base: string, factor: number) => {
+    let sum = 0;
+    for (let i = 0; i < base.length; i++) {
+      sum += Number(base[i]) * (factor - i);
+    }
+    const rem = (sum * 10) % 11;
+    return rem === 10 ? 0 : rem;
+  };
+
+  return (
+    calcCheck(d.slice(0, 9), 10) === Number(d[9]) &&
+    calcCheck(d.slice(0, 10), 11) === Number(d[10])
+  );
+};
+
 const formatPhoneBr = (digits: string) => {
   const d = digits.slice(0, 11);
   if (d.length === 0) return "";
@@ -117,6 +136,8 @@ const Checkout = ({ kit, onBack, onFinish }: { kit: any, onBack: () => void, onF
   const [quantity, setQuantity] = useState(1);
   const [shipping, setShipping] = useState<'free' | 'sedex'>('free');
   const [cepLoading, setCepLoading] = useState(false);
+  const [cepInvalid, setCepInvalid] = useState(false);
+  const [showNumberError, setShowNumberError] = useState(false);
   const [address, setAddress] = useState({
     cep: '',
     street: '',
@@ -145,30 +166,53 @@ const Checkout = ({ kit, onBack, onFinish }: { kit: any, onBack: () => void, onF
     const formatted = formatCep(digits);
     setAddress((prev) => ({ ...prev, cep: formatted }));
 
-    if (digits.length === 8) {
-      setCepLoading(true);
-      try {
-        const response = await fetch(`https://viacep.com.br/ws/${digits}/json/`);
-        const data = await response.json();
-        if (!data.erro) {
-          setAddress((prev) => ({
-            ...prev,
-            cep: formatted,
-            street: data.logradouro,
-            neighborhood: data.bairro,
-            city: data.localidade,
-            state: data.uf,
-          }));
-        }
-      } catch (error) {
-        console.error("Erro ao buscar CEP", error);
-      } finally {
-        setCepLoading(false);
+    if (digits.length < 8) {
+      setCepInvalid(false);
+      return;
+    }
+
+    setCepLoading(true);
+    setCepInvalid(false);
+    try {
+      const response = await fetch(`https://viacep.com.br/ws/${digits}/json/`);
+      const data = await response.json();
+      if (data.erro) {
+        setCepInvalid(true);
+        setAddress((prev) => ({
+          ...prev,
+          cep: formatted,
+          street: "",
+          neighborhood: "",
+          city: "",
+          state: "",
+        }));
+      } else {
+        setAddress((prev) => ({
+          ...prev,
+          cep: formatted,
+          street: data.logradouro,
+          neighborhood: data.bairro,
+          city: data.localidade,
+          state: data.uf,
+        }));
       }
+    } catch (error) {
+      console.error("Erro ao buscar CEP", error);
+      setCepInvalid(true);
+    } finally {
+      setCepLoading(false);
     }
   };
 
   const cepDigits = onlyDigits(address.cep);
+  const cpfDigits = onlyDigits(customer.cpf);
+  const cpfInvalid = cpfDigits.length === 11 && !isValidCpf(cpfDigits);
+  const cepError =
+    cepInvalid
+      ? "CEP inválido ou não encontrado."
+      : cepDigits.length > 0 && cepDigits.length < 8
+        ? "CEP incompleto."
+        : null;
 
   const subtotal = kit.price * quantity;
   const activeOrderBumps = ORDER_BUMPS.filter((bump) => selectedBumps[bump.id]);
@@ -186,6 +230,22 @@ const Checkout = ({ kit, onBack, onFinish }: { kit: any, onBack: () => void, onF
 
     if (!requiredFieldsFilled) {
       setSubmitError("Preencha nome, e-mail, CPF e telefone para continuar.");
+      return;
+    }
+
+    if (!isValidCpf(customer.cpf)) {
+      setSubmitError("Informe um CPF válido para continuar.");
+      return;
+    }
+
+    if (cepDigits.length !== 8 || cepInvalid) {
+      setSubmitError("Informe um CEP válido para continuar.");
+      return;
+    }
+
+    if (!address.number.trim()) {
+      setShowNumberError(true);
+      setSubmitError("Informe o número da residência para continuar.");
       return;
     }
 
@@ -269,6 +329,9 @@ const Checkout = ({ kit, onBack, onFinish }: { kit: any, onBack: () => void, onF
                       })
                     }
                   />
+                  {cpfInvalid && (
+                    <p className="text-xs text-red-500">CPF inválido.</p>
+                  )}
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-[#0F3D5C] uppercase tracking-wider">Celular / WhatsApp</label>
@@ -316,6 +379,9 @@ const Checkout = ({ kit, onBack, onFinish }: { kit: any, onBack: () => void, onF
                     />
                     {cepLoading && <div className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 border-2 border-[#2AADE4] border-t-transparent rounded-full animate-spin"></div>}
                   </div>
+                  {cepError && (
+                    <p className="text-xs text-red-500">{cepError}</p>
+                  )}
                 </div>
                 <div className="sm:col-span-2 space-y-1.5">
                   <label className="text-xs font-bold text-[#0F3D5C] uppercase tracking-wider">Endereço</label>
@@ -334,8 +400,15 @@ const Checkout = ({ kit, onBack, onFinish }: { kit: any, onBack: () => void, onF
                     placeholder="123"
                     className="w-full px-4 py-3 rounded-xl border border-[#E8F4FA] bg-[#F8FCFE] focus:outline-none focus:border-[#2AADE4] transition-colors text-sm"
                     value={address.number}
-                    onChange={e => setAddress({...address, number: e.target.value})}
+                    onChange={(e) => {
+                      const number = e.target.value;
+                      setAddress({ ...address, number });
+                      if (number.trim()) setShowNumberError(false);
+                    }}
                   />
+                  {showNumberError && (
+                    <p className="text-xs text-red-500">Número é obrigatório.</p>
+                  )}
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-[#0F3D5C] uppercase tracking-wider">Complemento</label>
@@ -379,7 +452,7 @@ const Checkout = ({ kit, onBack, onFinish }: { kit: any, onBack: () => void, onF
                 </div>
               </div>
 
-              {cepDigits.length === 8 && (
+              {cepDigits.length === 8 && !cepInvalid && (
                 <div className="space-y-4 pt-4 border-t border-[#E8F4FA]">
                   <label className="text-xs font-bold text-[#0F3D5C] uppercase tracking-wider">Escolha o Frete</label>
                   <div className="grid gap-3">
