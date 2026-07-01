@@ -110,7 +110,7 @@ export async function createPixCharge(body: unknown): Promise<ApiResult> {
     }
 
     const payload = (body ?? {}) as Record<string, unknown>;
-    const { name, email, cpf, phone, amount, quantity, utm, urlParams: urlParamsBody } = payload;
+    const { name, email, cpf, phone, amount, utm, urlParams: urlParamsBody } = payload;
 
     if (!name || !email || !cpf || !phone || !amount) {
       return {
@@ -123,7 +123,6 @@ export async function createPixCharge(body: unknown): Promise<ApiResult> {
     }
 
     const parsedAmount = Number(amount);
-    const parsedQuantity = Number(quantity || 1);
 
     if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
       return {
@@ -137,8 +136,6 @@ export async function createPixCharge(body: unknown): Promise<ApiResult> {
 
     const tracking = mergeTrackingPayload(utm, urlParamsBody);
     const roundedAmount = Math.round(parsedAmount);
-    const itemQuantity =
-      Number.isFinite(parsedQuantity) && parsedQuantity > 0 ? parsedQuantity : 1;
     const fruitfyBody: Record<string, unknown> = {
       name: String(name),
       email: String(email),
@@ -147,8 +144,9 @@ export async function createPixCharge(body: unknown): Promise<ApiResult> {
       items: [
         {
           id: FRUITFY_PRODUCT_ID,
+          // amount já é o total do pedido (produto × qtd + bumps + frete)
           value: roundedAmount,
-          quantity: itemQuantity,
+          quantity: 1,
         },
       ],
     };

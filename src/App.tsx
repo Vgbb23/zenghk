@@ -232,6 +232,7 @@ const Checkout = ({ kit, onBack, onFinish }: { kit: any, onBack: () => void, onF
   const orderBumpPrice = activeOrderBumps.reduce((sum, bump) => sum + bump.price, 0);
   const shippingPrice = shipping === 'sedex' ? 19.45 : 0;
   const total = subtotal + orderBumpPrice + shippingPrice;
+  const canChangeQuantity = kit.id === 1;
   
   const handleSubmitOrder = async () => {
     setSubmitError(null);
@@ -607,23 +608,27 @@ const Checkout = ({ kit, onBack, onFinish }: { kit: any, onBack: () => void, onF
                   <p className="text-xs text-[#5A8FA6]">Sérum GHK-CU · Peptídeos de Cobre, Colágeno e Ácido Hialurônico</p>
                   
                   <div className="flex items-center justify-between pt-2">
-                    <div className="flex items-center border border-[#E8F4FA] rounded-lg overflow-hidden">
-                      <button 
-                        onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                        className="px-2 py-1 hover:bg-[#E8F4FA] text-[#2AADE4] transition-colors"
-                      >
-                        <ChevronDown size={14} />
-                      </button>
-                      <span className="px-3 py-1 text-xs font-bold text-[#0F3D5C] border-x border-[#E8F4FA] min-w-[32px] text-center">
-                        {quantity}
-                      </span>
-                      <button 
-                        onClick={() => setQuantity(quantity + 1)}
-                        className="px-2 py-1 hover:bg-[#E8F4FA] text-[#2AADE4] transition-colors"
-                      >
-                        <ChevronUp size={14} />
-                      </button>
-                    </div>
+                    {canChangeQuantity ? (
+                      <div className="flex items-center border border-[#E8F4FA] rounded-lg overflow-hidden">
+                        <button 
+                          onClick={() => setQuantity(Math.max(1, quantity - 1))}
+                          className="px-2 py-1 hover:bg-[#E8F4FA] text-[#2AADE4] transition-colors"
+                        >
+                          <ChevronDown size={14} />
+                        </button>
+                        <span className="px-3 py-1 text-xs font-bold text-[#0F3D5C] border-x border-[#E8F4FA] min-w-[32px] text-center">
+                          {quantity}
+                        </span>
+                        <button 
+                          onClick={() => setQuantity(quantity + 1)}
+                          className="px-2 py-1 hover:bg-[#E8F4FA] text-[#2AADE4] transition-colors"
+                        >
+                          <ChevronUp size={14} />
+                        </button>
+                      </div>
+                    ) : (
+                      <span className="text-xs font-bold text-[#5A8FA6]">Qtd: {quantity}</span>
+                    )}
                     <p className="font-bold text-[#0F3D5C] text-sm">R$ {subtotal.toFixed(2).replace('.', ',')}</p>
                   </div>
                 </div>
@@ -1443,7 +1448,6 @@ export default function App() {
         cpf: onlyDigits(data.customer.cpf),
         phone: onlyDigits(data.customer.phone),
         amount: centsFromBRL(data.total),
-        quantity: data.quantity,
         utm: utmPayload,
       }),
     });
