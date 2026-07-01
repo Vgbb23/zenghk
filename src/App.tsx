@@ -43,6 +43,19 @@ import { mergeUrlParamsFromLocation, toFruitfyUtmPayload } from "./urlParams";
 const onlyDigits = (value: string) => value.replace(/\D/g, "");
 const centsFromBRL = (value: number) => Math.round(value * 100);
 
+async function readJsonResponse<T = Record<string, unknown>>(response: Response): Promise<T> {
+  const text = await response.text();
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new Error(
+      response.ok
+        ? "Resposta inválida do servidor."
+        : `API indisponível (${response.status}). Tente novamente em instantes.`
+    );
+  }
+}
+
 const formatCep = (digits: string) => {
   const d = digits.slice(0, 8);
   if (d.length <= 5) return d;
@@ -1435,7 +1448,7 @@ export default function App() {
       }),
     });
 
-    const payload = await response.json();
+    const payload = await readJsonResponse(response);
 
     if (!response.ok || payload?.success === false) {
       const validationDetail =
