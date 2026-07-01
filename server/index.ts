@@ -1,4 +1,23 @@
-import app from "./app";
+import express from "express";
+import { createPixCharge, getHealth, getOrder } from "../api/lib/fruitfy.js";
+
+const app = express();
+app.use(express.json());
+
+app.post("/api/pix/charge", async (req, res) => {
+  const result = await createPixCharge(req.body);
+  return res.status(result.status).json(result.body);
+});
+
+app.get("/api/order/:orderId", async (req, res) => {
+  const result = await getOrder(req.params.orderId);
+  return res.status(result.status).json(result.body);
+});
+
+app.get("/api/health", (_req, res) => {
+  const result = getHealth();
+  return res.status(result.status).json(result.body);
+});
 
 const PORT = Number(process.env.API_PORT || 3002);
 

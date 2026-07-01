@@ -1,17 +1,18 @@
 import dotenv from "dotenv";
-import express from "express";
 
 dotenv.config({ path: ".env" });
 dotenv.config({ path: ".env.local", override: true });
-
-const app = express();
-app.use(express.json());
 
 const FRUITFY_API_BASE_URL = process.env.FRUITFY_API_BASE_URL || "https://api.fruitfy.io";
 const FRUITFY_PIX_CHARGE_PATH = process.env.FRUITFY_PIX_CHARGE_PATH || "/api/pix/charge";
 const FRUITFY_TOKEN = process.env.FRUITFY_TOKEN;
 const FRUITFY_STORE_ID = process.env.FRUITFY_STORE_ID;
 const FRUITFY_PRODUCT_ID = process.env.FRUITFY_PRODUCT_ID;
+
+type ApiResult = {
+  status: number;
+  body: Record<string, unknown>;
+};
 
 function unwrapChargeData(responseJson: unknown): Record<string, unknown> {
   if (!responseJson || typeof responseJson !== "object") return {};
@@ -95,32 +96,43 @@ function mergeTrackingPayload(
   return Object.keys(merged).length ? merged : undefined;
 }
 
-app.post("/api/pix/charge", async (req, res) => {
+export async function createPixCharge(body: unknown): Promise<ApiResult> {
   try {
     if (!FRUITFY_TOKEN || !FRUITFY_STORE_ID || !FRUITFY_PRODUCT_ID) {
-      return res.status(500).json({
-        success: false,
-        message: "Configuração da Fruitfy incompleta. Verifique FRUITFY_TOKEN, FRUITFY_STORE_ID e FRUITFY_PRODUCT_ID.",
-      });
+      return {
+        status: 500,
+        body: {
+          success: false,
+          message:
+            "Configuração da Fruitfy incompleta. Verifique FRUITFY_TOKEN, FRUITFY_STORE_ID e FRUITFY_PRODUCT_ID.",
+        },
+      };
     }
 
-    const { name, email, cpf, phone, amount, quantity, utm, urlParams: urlParamsBody } = req.body ?? {};
+    const payload = (body ?? {}) as Record<string, unknown>;
+    const { name, email, cpf, phone, amount, quantity, utm, urlParams: urlParamsBody } = payload;
 
     if (!name || !email || !cpf || !phone || !amount) {
-      return res.status(400).json({
-        success: false,
-        message: "Campos obrigatórios ausentes: name, email, cpf, phone, amount.",
-      });
+      return {
+        status: 400,
+        body: {
+          success: false,
+          message: "Campos obrigatórios ausentes: name, email, cpf, phone, amount.",
+        },
+      };
     }
 
     const parsedAmount = Number(amount);
     const parsedQuantity = Number(quantity || 1);
 
     if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
-      return res.status(422).json({
-        success: false,
-        message: "Valor inválido. Envie o amount em centavos.",
-      });
+      return {
+        status: 422,
+        body: {
+          success: false,
+          message: "Valor inválido. Envie o amount em centavos.",
+        },
+      };
     }
 
     const tracking = mergeTrackingPayload(utm, urlParamsBody);
@@ -175,11 +187,14 @@ app.post("/api/pix/charge", async (req, res) => {
     try {
       responseJson = JSON.parse(responseText) as typeof responseJson;
     } catch {
-      return res.status(502).json({
-        success: false,
-        message: "Resposta inválida da Fruitfy ao criar cobrança PIX.",
-        error: responseText.slice(0, 300),
-      });
+      return {
+        status: 502,
+        body: {
+          success: false,
+          message: "Resposta inválida da Fruitfy ao criar cobrança PIX.",
+          error: responseText.slice(0, 300),
+        },
+      };
     }
 
     if (!gatewayResponse.ok) {
@@ -195,11 +210,14 @@ app.post("/api/pix/charge", async (req, res) => {
       const message =
         [responseJson?.message, validationDetail].filter(Boolean).join(" — ") ||
         "Erro ao criar cobrança PIX na Fruitfy.";
-      return res.status(gatewayResponse.status).json({
-        success: false,
-        message,
-        errors: responseJson?.errors || null,
-      });
+      return {
+        status: gatewayResponse.status,
+        body: {
+          success: false,
+          message,
+          errors: responseJson?.errors || null,
+        },
+      };
     }
 
     let merged = unwrapChargeData(responseJson);
@@ -210,57 +228,82 @@ app.post("/api/pix/charge", async (req, res) => {
       if (orderData) merged = { ...merged, ...orderData };
     }
 
-    return res.status(201).json({
-      success: true,
-      message: "Cobrança PIX gerada com sucesso.",
-      data: merged,
-    });
+    return {
+      status: 201,
+      body: {
+        success: true,
+        message: "Cobrança PIX gerada com sucesso.",
+        data: merged,
+      },
+    };
   } catch (error) {
-    return res.status(500).json({
-      success: false,
-      message: "Erro interno ao integrar com a Fruitfy.",
-      error: error instanceof Error ? error.message : "unknown_error",
-    });
+    return {
+      status: 500,
+      body: {
+        success: false,
+        message: "Erro interno ao integrar com a Fruitfy.",
+        error: error instanceof Error ? error.message : "unknown_error",
+      },
+    };
   }
-});
+}
 
-app.get("/api/order/:orderId", async (req, res) => {
+export async function getOrder(orderId: string | undefined): Promise<ApiResult> {
   try {
     if (!FRUITFY_TOKEN || !FRUITFY_STORE_ID) {
-      return res.status(500).json({
-        success: false,
-        message: "Configuração da Fruitfy incompleta.",
-      });
+      return {
+        status: 500,
+        body: {
+          success: false,
+          message: "Configuração da Fruitfy incompleta.",
+        },
+      };
     }
-    const orderId = req.params.orderId?.trim();
-    if (!orderId || orderId.length > 128 || !/^[a-zA-Z0-9_-]+$/.test(orderId)) {
-      return res.status(400).json({
-        success: false,
-        message: "ID do pedido inválido.",
-      });
+
+    const id = orderId?.trim();
+    if (!id || id.length > 128 || !/^[a-zA-Z0-9_-]+$/.test(id)) {
+      return {
+        status: 400,
+        body: {
+          success: false,
+          message: "ID do pedido inválido.",
+        },
+      };
     }
-    const data = await fetchFruitfyOrder(orderId);
+
+    const data = await fetchFruitfyOrder(id);
     if (!data) {
-      return res.status(404).json({
-        success: false,
-        message: "Pedido não encontrado.",
-      });
+      return {
+        status: 404,
+        body: {
+          success: false,
+          message: "Pedido não encontrado.",
+        },
+      };
     }
-    return res.json({
-      success: true,
-      data,
-    });
+
+    return {
+      status: 200,
+      body: {
+        success: true,
+        data,
+      },
+    };
   } catch (error) {
-    return res.status(500).json({
-      success: false,
-      message: "Erro ao consultar pedido na Fruitfy.",
-      error: error instanceof Error ? error.message : "unknown_error",
-    });
+    return {
+      status: 500,
+      body: {
+        success: false,
+        message: "Erro ao consultar pedido na Fruitfy.",
+        error: error instanceof Error ? error.message : "unknown_error",
+      },
+    };
   }
-});
+}
 
-app.get("/api/health", (_req, res) => {
-  res.json({ ok: true, service: "fruitfy-bridge" });
-});
-
-export default app;
+export function getHealth(): ApiResult {
+  return {
+    status: 200,
+    body: { ok: true, service: "fruitfy-bridge" },
+  };
+}
